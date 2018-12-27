@@ -56,7 +56,7 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
 				$callback = add_query_arg( 'verify_payping', '1', get_permalink( $edd_options['success_page'] ) );
 
 				$amount = intval( $purchase_data['price'] ) ;
-				if ( $edd_options['payping_currency'] == 'IRR' )
+				if ( edd_get_currency() == 'IRR' or strtoupper(edd_get_currency()) == 'RIAL' or strtoupper(edd_get_currency()) == 'ريال' )
 					$amount = $amount / 10; // Return back to original one.
 
 				$data = array(
@@ -156,7 +156,7 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
 				if ( $payment->status == 'complete' ) return false;
 
 				$amount = intval( edd_get_payment_amount( $payment->ID ) ) ;
-				if ( edd_get_currency() == 'IRR' )
+				if ( edd_get_currency() == 'IRR' or strtoupper(edd_get_currency()) == 'RIAL' or strtoupper(edd_get_currency()) == 'ريال' )
 					$amount = $amount / 10; // Return back to original one.
 
 				$tokenCode = ( isset( $edd_options[ 'payping_tokenCode' ] ) ? $edd_options[ 'payping_tokenCode' ] : '' );
@@ -273,13 +273,6 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
 					'name' 			=>	'کد توکن اختصاصی',
 					'type' 			=>	'text',
 					'size' 			=>	'regular'
-				),
-				'payping_currency' 		=>	array(
-					'id' 			=>	'payping_currency',
-					'name' 			=>	'واحد پولی وبسایت شما',
-					'type' 			=>	'radio',
-					'options' 		=>	array( 'IRT' => 'تومان', 'IRR' => 'ریال' ),
-					'std' 			=>	edd_get_currency()
 				),
 				'payping_label' 	=>	array(
 					'id' 			=>	'payping_label',
