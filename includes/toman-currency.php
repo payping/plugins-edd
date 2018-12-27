@@ -21,7 +21,7 @@ function irg_add_tomain_currencyP( $currencies ) {
 	return $currencies;
 }
 endif;
-add_filter( 'edd_currencies', 'irg_add_tomain_currency' );
+add_filter( 'edd_currencies', 'irg_add_tomain_currencyP' );
 
 /**
  * Format decimals
