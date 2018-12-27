@@ -161,10 +161,10 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
 
 				$tokenCode = ( isset( $edd_options[ 'payping_tokenCode' ] ) ? $edd_options[ 'payping_tokenCode' ] : '' );
 
-				$data = json_encode( array(
+				$data =  array(
 					'amount' 				=>	$amount,
 					'refId'				=>	$refid
-				) );
+				) ;
 
 				try {
 					$curl = curl_init();
