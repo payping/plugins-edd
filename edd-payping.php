@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: افزونه پرداخت پی‌پینگ برای Easy Digital Downloads
-Version: 1.0
+Version: 1.1
 Description:  افزونه درگاه پرداخت پی‌پینگ برای Easy Digital Downloads
 Plugin URI: https://www.payping.ir/
 Author: Erfan Ebrahimi
