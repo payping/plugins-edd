@@ -1,19 +1,23 @@
 <?php
-/*
-Plugin Name: افزونه پرداخت پی‌پینگ برای Easy Digital Downloads
-Version: 1.0
-Description:  افزونه درگاه پرداخت پی‌پینگ برای Easy Digital Downloads
-Plugin URI: https://www.payping.ir/
-Author: Erfan Ebrahimi
-Author URI: http://erfanebrahimi.ir/
-
-*/
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
 
 	class EDD_payping_Gateway {
+        
+        /* Show Debug In Console */
+        public function WC_GPP_Debug_Log($Mode_Debug='null', $object=null, $label=null )
+        {
+            if($Mode_Debug === '1'){
+                $object = $object; 
+                $message = json_encode( $object, JSON_UNESCAPED_UNICODE );
+                $label = "Debug".($label ? " ($label): " : ': '); 
+                echo "<script>console.log(\"$label\", $message);</script>";
 
+                file_put_contents(EDD_GPPDIR.'/log_payping.txt', $label."\n".$message."\n\n", FILE_APPEND);
+            }
+        }
+        
 		public function __construct() {
 
 			add_filter( 'edd_payment_gateways', array( $this, 'add' ) );
@@ -27,7 +31,6 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
 			add_action( 'init', array( $this, 'listen' ) );
 		}
 
-
 		public function add( $gateways ) {
 			global $edd_options;
 
@@ -38,7 +41,6 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
 
 			return $gateways;
 		}
-
 
 		public function cc_form() {
 			return;
@@ -64,82 +66,64 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
 					'payerIdentity'         =>  $purchase_data['user_email'],
 					'Amount' 				=>	$amount,
 					'Description' 			=>	$desc,
-					'returnUrl' 			=>	$callback
-				) ;
+					'ReturnUrl' 			=>	$callback
+				);
+                
+                $args = array(
+                    'body' => json_encode($data),
+                    'timeout' => '45',
+                    'redirection' => '5',
+                    'httpsversion' => '1.0',
+                    'blocking' => true,
+	                'headers' => array(
+		              'Authorization' => 'Bearer '.$tokenCode,
+		              'Content-Type'  => 'application/json',
+		              'Accept' => 'application/json'
+		              ),
+                    'cookies' => array()
+                );
 
-				try {
-					$curl = curl_init();
-
-					curl_setopt_array($curl, array(
-							CURLOPT_URL => "https://api.payping.ir/v1/pay",
-							CURLOPT_RETURNTRANSFER => true,
-							CURLOPT_ENCODING => "",
-							CURLOPT_MAXREDIRS => 10,
-							CURLOPT_TIMEOUT => 30,
-							CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-							CURLOPT_CUSTOMREQUEST => "POST",
-							CURLOPT_POSTFIELDS => json_encode($data),
-							CURLOPT_HTTPHEADER => array(
-								"accept: application/json",
-								"authorization: Bearer " . $tokenCode,
-								"cache-control: no-cache",
-								"content-type: application/json"
-							),
-						)
-					);
-
-					$response = curl_exec($curl);
-					$header = curl_getinfo($curl);
-					$err = curl_error($curl);
-					curl_close($curl);
-
-					if ($err) {
-						edd_insert_payment_note( $payment, 'کد خطا: CURL#' . $err );
+                    $response = wp_remote_post('https://api.payping.ir/v1/pay', $args);
+                    $res_header = wp_remote_retrieve_headers($response);
+                    $payping_id_request = $res_header['x-paypingrequest-id'];
+                
+                    /* Call Function Show Debug In Console */
+                    $this->WC_GPP_Debug_Log($edd_options['payping_header_Debug'], $response, "Pay");
+                
+                    if ( is_wp_error($response) ) {
+                        edd_insert_payment_note( $payment, 'شناسه درخواست پی‌پینگ: '.$payping_id_request );
 						edd_update_payment_status( $payment, 'failed' );
 						edd_set_error( 'payping_connect_error', 'در اتصال به درگاه مشکلی پیش آمد.' );
 						edd_send_back_to_checkout();
 						return false;
-					} else {
-						if ($header['http_code'] == 200) {
-							$response = json_decode($response, true);
-							if (isset($response["code"]) and $response["code"] != '') {
-								edd_insert_payment_note( $payment, 'کد تراکنش پی‌پینگ: ' . $response["code"] );
-								edd_update_payment_meta( $payment, 'payping_code', $response["code"] );
+					}else{
+                        $code = wp_remote_retrieve_response_code( $response );
+                        if($code === 200){
+							if (isset($response["body"]) and $response["body"] != '') {
+								$code_pay = wp_remote_retrieve_body($response);
+								$code_pay =  json_decode($code_pay, true);
+                                edd_insert_payment_note( $payment, 'کد تراکنش پی‌پینگ: '.$code_pay );
+								edd_update_payment_meta( $payment, 'payping_code', $code_pay );
 								$_SESSION['pp_payment'] = $payment;
-								wp_redirect( sprintf( 'https://api.payping.ir/v1/pay/gotoipg/%s', $response["code"] ) );
-							} else {
-								$Message = ' تراکنش ناموفق بود- شرح خطا : عدم وجود کد ارجاع ';
+								wp_redirect(sprintf('https://api.payping.ir/v1/pay/gotoipg/%s', $code_pay["code"]));
+								exit;
+							}else{
+                                $Message = ' تراکنش ناموفق بود- شرح خطا : عدم وجود کد ارجاع ';
 								edd_insert_payment_note( $payment, $Message  );
 								edd_update_payment_status( $payment, 'failed' );
 								edd_set_error( 'payping_connect_error', $Message );
 								edd_send_back_to_checkout();
-							}
-						} elseif ($header['http_code'] == 400) {
-							$Message = ' تراکنش ناموفق بود- شرح خطا : ' . implode('. ',array_values (json_decode($response,true)));
+                            }
+                    }else{
+							$Message = $this->error_reason(wp_remote_retrieve_response_code( $response ));
 							edd_insert_payment_note( $payment, $Message  );
 							edd_update_payment_status( $payment, 'failed' );
 							edd_set_error( 'payping_connect_error', $Message );
 							edd_send_back_to_checkout();
-						} else {
-							$Message = ' تراکنش ناموفق بود- شرح خطا : ' . $this->error_reason($header['http_code']) . '(' . $header['http_code'] . ')';
-							edd_insert_payment_note( $payment, $Message  );
-							edd_update_payment_status( $payment, 'failed' );
-							edd_set_error( 'payping_connect_error', $Message );
-							edd_send_back_to_checkout();
-						}
-					}
-				} catch (Exception $e){
-					$Message = ' تراکنش ناموفق بود- شرح خطا سمت برنامه شما : ' . $e->getMessage();
-					edd_insert_payment_note( $payment, $Message  );
-					edd_update_payment_status( $payment, 'failed' );
-					edd_set_error( 'payping_connect_error', $Message );
-					edd_send_back_to_checkout();
+				    }
+                    
 				}
-
-
-			} else {
-				edd_send_back_to_checkout( '?payment-mode=' . $purchase_data['post_data']['edd-gateway'] );
-			}
+            }
 		}
 
 
@@ -165,79 +149,59 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
 					'amount' 				=>	$amount,
 					'refId'				=>	$refid
 				) ;
-
-				try {
-					$curl = curl_init();
-					curl_setopt_array($curl, array(
-						CURLOPT_URL => "https://api.payping.ir/v1/pay/verify",
-						CURLOPT_RETURNTRANSFER => true,
-						CURLOPT_ENCODING => "",
-						CURLOPT_MAXREDIRS => 10,
-						CURLOPT_TIMEOUT => 30,
-						CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-						CURLOPT_CUSTOMREQUEST => "POST",
-						CURLOPT_POSTFIELDS => json_encode($data),
-						CURLOPT_HTTPHEADER => array(
-							"accept: application/json",
-							"authorization: Bearer ".$tokenCode,
-							"cache-control: no-cache",
-							"content-type: application/json",
-						),
-					));
-					$response = curl_exec($curl);
-					$err = curl_error($curl);
-					$header = curl_getinfo($curl);
-					curl_close($curl);
-
-
-					edd_empty_cart();
+                
+                        $args = array(
+                            'body' => json_encode($data),
+                            'timeout' => '45',
+                            'redirection' => '5',
+                            'httpsversion' => '1.0',
+                            'blocking' => true,
+	                        'headers' => array(
+	                       	'Authorization' => 'Bearer ' .$tokenCode,
+	                       	'Content-Type'  => 'application/json',
+	                       	'Accept' => 'application/json'
+	                       	),
+                         'cookies' => array()
+                        );
+                    $response = wp_remote_post('https://api.payping.ir/v1/pay/verify', $args);
+                    
+                    /* Call Function Show Debug In Console */
+                    $this->WC_GPP_Debug_Log($edd_options['payping_header_Debug'], $response, "Verify");
+                
+                    $res_header = wp_remote_retrieve_headers($response);
+                    $payping_id_request = $res_header['x-paypingrequest-id'];
+                    edd_empty_cart();
 
 					if ( version_compare( EDD_VERSION, '2.1', '>=' ) )
-						edd_set_payment_transaction_id( $payment->ID, $refid );
-
-					if ($err) {
-						$Message = 'خطا در ارتباط به پی‌پینگ : شرح خطا '.$err;
-						edd_insert_payment_note( $payment->ID, $Message );
-						edd_update_payment_meta( $payment->ID, 'payping_refid', $refid );
-						edd_update_payment_status( $payment->ID, 'failed' );
-						wp_redirect( get_permalink( $edd_options['failure_page'] ) );
-					} else {
-						if ($header['http_code'] == 200) {
-							$response = json_decode($response, true);
+						edd_set_payment_transaction_id( $payment->ID, $refid );							
+                
+                    if ( is_wp_error($response) ) {
+                        $Status = 'failed';
+				        $Fault = 'wp-remote Error.';
+						$Message = 'خطا در ارتباط به پی‌پینگ : شرح خطا '.$payping_id_request;
+					}else{	
+						$code = wp_remote_retrieve_response_code( $response );
+						if ( $code === 200 ) {
 							if (isset($refid) and $refid != '') {
-								edd_insert_payment_note( $payment->ID, 'شماره تراکنش بانکی: ' . $refid );
+								edd_insert_payment_note( $payment->ID, 'شماره تراکنش بانکی: '.$refid );
 								edd_update_payment_meta( $payment->ID, 'payping_refid', $refid );
 								edd_update_payment_status( $payment->ID, 'publish' );
 								edd_send_to_success_page();
-							} else {
-								$Message = 'متافسانه سامانه قادر به دریافت کد پیگیری نمی باشد! نتیجه درخواست : ' . $this->error_reason($header['http_code']) . '(' . $header['http_code'] . ')' ;
+							}else{
+								$Message = 'متافسانه سامانه قادر به دریافت کد پیگیری نمی باشد! نتیجه درخواست : '.$payping_id_request;
 								edd_insert_payment_note( $payment->ID, $Message );
 								edd_update_payment_meta( $payment->ID, 'payping_refid', $refid );
 								edd_update_payment_status( $payment->ID, 'failed' );
 								wp_redirect( get_permalink( $edd_options['failure_page'] ) );
 							}
-						} elseif ($header['http_code'] == 400) {
-							$Message = ' تراکنش ناموفق بود- شرح خطا : ' . implode('. ',array_values (json_decode($response,true)));
-							edd_insert_payment_note( $payment->ID, $Message );
-							edd_update_payment_meta( $payment->ID, 'payping_refid', $refid );
-							edd_update_payment_status( $payment->ID, 'failed' );
-							wp_redirect( get_permalink( $edd_options['failure_page'] ) );
-						} else {
-							$Message = ' تراکنش ناموفق بود- شرح خطا : ' . $this->error_reason($header['http_code']) . '(' . $header['http_code'] . ')';
+						}else{
+							$Message = wp_remote_retrieve_response_message( $response );
 							edd_insert_payment_note( $payment->ID, $Message );
 							edd_update_payment_meta( $payment->ID, 'payping_refid', $refid );
 							edd_update_payment_status( $payment->ID, 'failed' );
 							wp_redirect( get_permalink( $edd_options['failure_page'] ) );
 						}
-
 					}
-				} catch (Exception $e){
-					$Message = ' تراکنش ناموفق بود- شرح خطا سمت برنامه شما : ' . $e->getMessage();
-					edd_insert_payment_note( $payment->ID, $Message );
-					edd_update_payment_meta( $payment->ID, 'payping_refid', $refid );
-					edd_update_payment_status( $payment->ID, 'failed' );
-					wp_redirect( get_permalink( $edd_options['failure_page'] ) );
-				}
 
 			}
 		}
@@ -251,7 +215,7 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
 		public function receipt( $payment ) {
 			$refid = edd_get_payment_meta( $payment->ID, 'payping_refid' );
 			if ( $refid ) {
-				echo '<tr class="payping-ref-id-row ezp-field ehsaan-me"><td><strong>شماره تراکنش بانکی:</strong></td><td>' . $refid . '</td></tr>';
+				echo '<tr class="payping-ref-id-row ezp-field ehsaan-me"><td><strong>شماره تراکنش بانکی:</strong></td><td>'.$refid.'</td></tr>';
 			}
 		}
 
@@ -266,7 +230,7 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
 				'payping_header' 		=>	array(
 					'id' 			=>	'payping_header',
 					'type' 			=>	'header',
-					'name' 			=>	'افزونه درگاه پرداخت <strong>پی‌پینگ</strong><br> توسعه دهنده : <a href="http://erfanebrahimi.com">ابراهیمی</a>'
+					'name' 			=>	'افزونه درگاه پرداخت <strong>پی‌پینگ</strong>'
 				),
 				'payping_tokenCode' 		=>	array(
 					'id' 			=>	'payping_tokenCode',
@@ -280,7 +244,14 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
 					'type' 			=>	'text',
 					'size' 			=>	'regular',
 					'std' 			=>	'پرداخت از طریق پی‌پینگ'
-				)
+				),
+                'payping_header_Debug' 		=>	array(
+					'id' 			=>	'payping_header_Debug',
+					'type' 			=>	'checkbox',
+                    'name' 			=>	'تنظیمات اشکال زدایی',
+					'desc' 			=>	'تنظیمات اشکال زدایی <span style="font-size:12px;color:red;">این بخش برای توسعه دهندگان است.(در صورت نداشتن اطلاعات کافی آن را رها کنید).</span>',
+                    'defualt'       => 'yes'
+				),
 			) );
 		}
 
@@ -306,7 +277,7 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
 				'status' => 'pending'
 			);
 
-			// record the pending payment
+			/* record the pending payment */
 			$payment = edd_insert_payment( $payment_data );
 
 			return $payment;
