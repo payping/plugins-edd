@@ -1,10 +1,10 @@
-=== Gateway PayPing Easy Digital Downloads ===
-Contributors: mashhadcode
+﻿=== Gateway PayPing Easy Digital Downloads ===
+Contributors: payping, mahdisarani
 Tags: Easy Digital Downloads, edd, payment, payping, افزونه پرداخت, ووکامرس, ووکامرس فارسی, درگاه پرداخت, gateway, iran, persian, پی پینگ, pay ping
-Donate link: https://mashhadcode.com
+Donate link: https://payping.ir
 Requires at least: 4.0.0
-Tested up to: 5.2.0
-Requires PHP: 5.6.3
+Tested up to: 5.8.0
+Requires PHP: 7.0
 Stable tag: 1.0.0
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html

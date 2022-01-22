@@ -12,8 +12,7 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
                 $object = $object; 
                 $message = json_encode( $object, JSON_UNESCAPED_UNICODE );
                 $label = "Debug".($label ? " ($label): " : ': '); 
-                echo "<script>console.log(\"$label\", $message);</script>";
-
+				echo sprintf("<script>console.warn(\"%s\", %s);</script>", esc_html($label), esc_html($messages));
                 file_put_contents(EDD_GPPDIR.'/log_payping.txt', $label."\n".$message."\n\n", FILE_APPEND);
             }
         }
@@ -47,6 +46,16 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
 		}
 
 		public function process( $purchase_data ) {
+			$user_data = $purchase_data['user_info'];
+	        if(isset($user_data)){
+				$first_name = $user_data['first_name'];
+				$last_name = $user_data['last_name'];
+				$full_name = $user_data['first_name'].' '. $user_data['last_name'];
+			}else{
+				$first_name = __('وارد نشده‌است', 'payping');
+				$last_name = __('وارد نشده‌است', 'payping');
+				$full_name = $user_data['first_name'].' '. $user_data['last_name'];
+			}
 			global $edd_options;
 			@ session_start();
 			$payment = $this->insert_payment( $purchase_data );
@@ -63,6 +72,7 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
 
 				$data = array(
 					'clientRefId' 			=>	$payment,
+					'payerName'             =>  $full_name,
 					'payerIdentity'         =>  $purchase_data['user_email'],
 					'Amount' 				=>	$amount,
 					'Description' 			=>	$desc,
@@ -83,7 +93,7 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
                     'cookies' => array()
                 );
 
-                    $response = wp_remote_post('https://api.payping.ir/v1/pay', $args);
+                    $response = wp_remote_post('https://api.payping.ir/v2/pay', $args);
                     $res_header = wp_remote_retrieve_headers($response);
                     $payping_id_request = $res_header['x-paypingrequest-id'];
                 
@@ -105,7 +115,7 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
                                 edd_insert_payment_note( $payment, 'کد تراکنش پی‌پینگ: '.$code_pay );
 								edd_update_payment_meta( $payment, 'payping_code', $code_pay );
 								$_SESSION['pp_payment'] = $payment;
-								wp_redirect(sprintf('https://api.payping.ir/v1/pay/gotoipg/%s', $code_pay["code"]));
+								wp_redirect(sprintf('https://api.payping.ir/v2/pay/gotoipg/%s', $code_pay["code"]));
 								exit;
 							}else{
                                 $Message = ' تراکنش ناموفق بود- شرح خطا : عدم وجود کد ارجاع ';
@@ -130,12 +140,12 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
 		public function verify() {
 			global $edd_options;
 
-			if ( isset( $_GET['refid'] ) ) {
-				$refid = sanitize_text_field( $_GET['refid'] );
+			if ( isset( $_REQUEST['refid'] ) ) {
+				$refid = sanitize_text_field( $_REQUEST['refid'] );
 				$payment = edd_get_payment( $_SESSION['pp_payment'] );
 				unset( $_SESSION['pp_payment'] );
 				if ( ! $payment ) {
-					wp_die( 'رکورد پرداخت موردنظر وجود ندارد!' );
+					$payment = edd_get_payment( sanitize_text_field( $_REQUEST['clientrefid'] ) );
 				}
 				if ( $payment->status == 'complete' ) return false;
 
@@ -146,7 +156,7 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
 				$tokenCode = ( isset( $edd_options[ 'payping_tokenCode' ] ) ? $edd_options[ 'payping_tokenCode' ] : '' );
 
 				$data =  array(
-					'amount' 				=>	$amount,
+					'amount' 		    =>	$amount,
 					'refId'				=>	$refid
 				) ;
                 
@@ -179,11 +189,11 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
                         $Status = 'failed';
 				        $Fault = 'wp-remote Error.';
 						$Message = 'خطا در ارتباط به پی‌پینگ : شرح خطا '.$payping_id_request;
-					}else{	
+					}else{
 						$code = wp_remote_retrieve_response_code( $response );
-						if ( $code === 200 ) {
+						if ( $code == 200 ) {
 							if (isset($refid) and $refid != '') {
-								edd_insert_payment_note( $payment->ID, 'شماره تراکنش بانکی: '.$refid );
+								edd_insert_payment_note( $payment->ID, 'شماره تراکنش: '.$refid );
 								edd_update_payment_meta( $payment->ID, 'payping_refid', $refid );
 								edd_update_payment_status( $payment->ID, 'publish' );
 								edd_send_to_success_page();
@@ -195,11 +205,13 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
 								wp_redirect( get_permalink( $edd_options['failure_page'] ) );
 							}
 						}else{
+							
 							$Message = wp_remote_retrieve_response_message( $response );
 							edd_insert_payment_note( $payment->ID, $Message );
 							edd_update_payment_meta( $payment->ID, 'payping_refid', $refid );
 							edd_update_payment_status( $payment->ID, 'failed' );
 							wp_redirect( get_permalink( $edd_options['failure_page'] ) );
+							exit;
 						}
 					}
 
@@ -215,7 +227,7 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
 		public function receipt( $payment ) {
 			$refid = edd_get_payment_meta( $payment->ID, 'payping_refid' );
 			if ( $refid ) {
-				echo '<tr class="payping-ref-id-row ezp-field ehsaan-me"><td><strong>شماره تراکنش بانکی:</strong></td><td>'.$refid.'</td></tr>';
+				echo sprintf('<tr class="payping-ref-id-row epp-field ehsaan-me"><td><strong>شماره تراکنش بانکی:</strong></td><td>%s</td></tr>', esc_attr($refid));
 			}
 		}
 
@@ -289,7 +301,7 @@ if ( ! class_exists( 'EDD_payping_Gateway' ) ) :
 		 * @return 			void
 		 */
 		public function listen() {
-			if ( isset( $_GET[ 'verify_payping' ] ) && $_GET[ 'verify_payping' ] ) {
+			if ( isset( $_REQUEST[ 'verify_payping' ] ) && $_REQUEST[ 'verify_payping' ] ) {
 				do_action( 'edd_verify_payping' );
 			}
 		}

@@ -7,12 +7,12 @@
  * @return 				array
  */
 if ( ! function_exists('irg_add_toman_currencyP')):
-function irg_add_tomain_currencyP( $currencies ) {
+function irpayping_add_toman_currency( $currencies ) {
 	$currencies['IRT'] = 'تومان';
 	return $currencies;
 }
 endif;
-add_filter( 'edd_currencies', 'irg_add_tomain_currencyP' );
+add_filter( 'edd_currencies', 'irpayping_add_toman_currency' );
 
 /**
  * Format decimals
@@ -47,12 +47,12 @@ if ( function_exists('per_number') ) {
 	add_filter( 'edd_irt_currency_filter_after', 'per_number', 10, 2 );
 }
 
-add_filter( 'edd_irt_currency_filter_after', 'toman_postfixP', 10, 2 );
-function toman_postfixP( $price, $did ) {
+add_filter( 'edd_irt_currency_filter_after', 'irpayping_toman_postfix', 10, 2 );
+function irpayping_toman_postfix( $price, $did ) {
 	return str_replace( 'IRT', 'تومان', $price );
 }
 
-add_filter( 'edd_rial_currency_filter_after', 'rial_postfixP', 10, 2 );
-function rial_postfixP( $price, $did ) {
+add_filter( 'edd_rial_currency_filter_after', 'rialpayping_postfix', 10, 2 );
+function rialpayping_postfix( $price, $did ) {
 	return str_replace( 'RIAL', 'ریال', $price );
 }
